@@ -192,26 +192,31 @@ template<> void BaseSetting<SandboxMode>::convertToArg(Args & args, const std::s
     });
 }
 
-static void logFormatCompleter(size_t index, std::string_view prefix)
-{
-    for (auto & builder : registeredLoggers)
-        if (hasPrefix(builder->name, prefix))
-            completions->insert(builder->name);
-}
-
 std::string listLogFormats()
 {
     std::string res;
 
-    for (auto format = logFormats.begin(); format != logFormats.end(); ++format) {
+    auto loggers = getRegisteredLoggers();
+
+    for (auto format = loggers.begin(); format != loggers.end(); ++format) {
         if (!res.empty()) res += ", ";
-        if (std::next(format) == logFormats.end()) res += "or ";
+        if (std::next(format) == loggers.end()) res += "or ";
         res += "'";
-        res += *format;
+        res += (*format)->name;
         res += "'";
     }
 
     return res;
+}
+
+LogFormatSetting::LogFormatSetting(Config * options,
+        LogFormat def,
+        const std::string & name,
+        const std::string & description,
+        const std::set<std::string> & aliases)
+    : BaseSetting<LogFormat>(def, name, fmt("%s Valid options are: %s.", description, listLogFormats()), aliases)
+{
+    options->addSetting(this);
 }
 
 template<> void BaseSetting<LogFormat>::set(const std::string & str)
@@ -236,6 +241,13 @@ template<> std::string BaseSetting<LogFormat>::to_string() const
     else abort();
 }
 
+static void logFormatCompleter(size_t index, std::string_view prefix)
+{
+    for (auto & builder : getRegisteredLoggers())
+        if (hasPrefix(builder->name, prefix))
+            completions->insert(builder->name);
+}
+
 template<> void BaseSetting<LogFormat>::convertToArg(Args & args, const std::string & category)
 {
     args.addFlag({
@@ -252,13 +264,13 @@ template<> void BaseSetting<LogFormat>::convertToArg(Args & args, const std::str
 
 void setLogFormat(const LogFormat & logFormat)
 {
-    settings.logFormat = logFormat;
+    settings.logFormat.assign(logFormat);
     createDefaultLogger();
 }
 
 Logger* makeDefaultLogger()
 {
-    for (auto & builder : registeredLoggers) {
+    for (auto & builder : getRegisteredLoggers()) {
         if (builder->name == settings.logFormat.to_string()) {
             return builder->builder();
         }
